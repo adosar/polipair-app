@@ -2,9 +2,9 @@ import numpy as np
 import joblib
 import streamlit as st
 import pandas as pd
+import polars as pl
 from rdkit import Chem
 from rdkit.Chem import rdMolDescriptors
-import pyarrow.parquet as pq
 
 
 def canonicalize_smiles(smiles: str):
@@ -44,6 +44,20 @@ def load_model():
     return joblib.load('saved_models/best_model.joblib')
 
 
+@st.cache_data
+def filter_pubchem(amw_slider, nar_value, nha_value, fetch=False):
+    ldf_filtered = ldf.filter(
+        (pl.col('amw').is_between(amw_slider[0], amw_slider[1])) &
+        (pl.col('NumAromaticRings') == nar_value) &
+        (pl.col('NumHeavyAtoms') == nha_value)
+    )
+    if not fetch:
+        return ldf_filtered.select(pl.len()).collect().item()
+    else:
+        return ldf_filtered.collect().to_pandas()
+
+
+
 def prepare_inputs(X_poc, X_lig):
     X_input = pd.concat([X_poc] * len(X_lig))
     X_input.index = X_lig.index
@@ -52,10 +66,6 @@ def prepare_inputs(X_poc, X_lig):
     X_input.dropna(inplace=True)
 
     return X_input
-
-
-def load_parquet_shard(shard):
-    return pd.read_parquet(shard)
 
 
 def predict(X_poc, X_lig, from_pubchem):
@@ -90,3 +100,4 @@ descriptors = rdMolDescriptors.Properties(descriptor_names)
 pockets_url = 'https://huggingface.co/datasets/adosar/polipair-app-data/resolve/main/pocket_16k_features.parquet'
 pubchem_url = 'https://huggingface.co/datasets/adosar/polipair-app-data/resolve/main/pubchem_5M_features.parquet'
 n_chunks = 5
+ldf = pl.scan_parquet(pubchem_url)  # Lazy load PubChem

@@ -1,8 +1,7 @@
-import duckdb
-import streamlit as st
 import pandas as pd
+import streamlit as st
 
-from utils import ligands_to_desc, load_pockets, predict, pubchem_url
+from utils import ligands_to_desc, load_pockets, predict, filter_pubchem
 
 logo_link = r'https://raw.githubusercontent.com/adosar/polipair-app/master/images/logo.png'
 
@@ -98,7 +97,6 @@ scores.
 """)
 
 
-
 # Pocket selection
 # =======================================
 st.header('🔬 Select pocket to analyze', divider=True)
@@ -169,7 +167,7 @@ if option == option_list[0]:
             st.dataframe(X_ligands, hide_index=True)
 
 elif option == option_list[1]:
-    st.info('''You can **choose up to 100,000** ligands from a total of 6
+    st.info('''You can **choose up to 100,000** ligands from a total of 5
             million sourced from PubChem. Use the sliders to narrow down the
             list of candidate ligands.''', icon=info_icon)
 
@@ -201,40 +199,27 @@ elif option == option_list[1]:
                 help='The total count of non-hydrogen atoms',
                 )
 
-    # SQL count query
-    count_query = f"""
-    SELECT COUNT(*)
-    FROM '{pubchem_url}'
-    WHERE amw BETWEEN {amw_slider[0]} AND {amw_slider[1]}
-      AND NumAromaticRings = {nar_value}
-      AND NumHeavyAtoms = {nha_value}
-    """
-
-    count = duckdb.query(count_query).fetchone()[0]
+    count = filter_pubchem(amw_slider, nar_value, nha_value)
 
     if count > pubchem_lim:
         st.warning(
-                f'Budget exceeded: {count} ligands. Please refine your filters.',
-                icon=warn_icon
-                )
+            f'Budget exceeded: {count:,} ligands. Please refine your filters.',
+            icon=warn_icon
+        )
     elif count == 0:
         st.warning(
-                f'No ligands found. Please refine your filters.',
-                icon=warn_icon
-                )
+            'No ligands found. Please refine your filters.',
+            icon=warn_icon
+        )
     else:
-        # Fetch ligands from PubChem
-        fetch_query = f"""
-        SELECT *
-        FROM '{pubchem_url}'
-        WHERE amw BETWEEN {amw_slider[0]} AND {amw_slider[1]}
-          AND NumAromaticRings = {nar_value}
-          AND NumHeavyAtoms = {nha_value}
-        """
-        X_ligands = duckdb.query(fetch_query).to_df()
-        from_pubchem = True
-        X_ligands.set_index('CID', inplace=True)
-        st.success(f'Fetched **{count:,}** ligands from PubChem.', icon=check_icon)
+        agree = st.checkbox(f'**{count:,}** ligands can be fetched from PubChem. Do you want to continue?')
+        if agree:
+            with st.spinner(f'Fetching **{count:,}** ligands from PubChem. Please wait...'):
+                X_ligands = filter_pubchem(amw_slider, nar_value, nha_value, fetch=True)
+                X_ligands.set_index('CID', inplace=True)
+                from_pubchem = True
+
+            st.success(f'Fetched **{count:,}** ligands from PubChem.', icon=check_icon)
 
 
 # Results
